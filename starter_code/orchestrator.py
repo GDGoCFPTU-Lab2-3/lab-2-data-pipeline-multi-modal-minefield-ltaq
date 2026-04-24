@@ -33,20 +33,57 @@ def main():
     code_path = os.path.join(RAW_DATA_DIR, "legacy_pipeline.py")
     
     output_path = os.path.join(os.path.dirname(SCRIPT_DIR), "processed_knowledge_base.json")
-    # ----------------------------------------------
-
-    # TODO: Call each processing function (extract_pdf_data, clean_transcript, etc.)
-    # TODO: Run quality gates (run_quality_gate) before adding to final_kb
-    # TODO: Save final_kb to output_path using json.dump
     
-    # Example:
-    # doc = extract_pdf_data(pdf_path)
-    # if doc and run_quality_gate(doc):
-    #     final_kb.append(doc)
+    # --- PROCESSING PIPELINE ---
+    print("Starting Multi-Modal Pipeline...")
+    
+    # 1. Process PDF (May fail if API key is missing)
+    try:
+        pdf_data = extract_pdf_data(pdf_path)
+        if pdf_data:
+            # We wrap it in UnifiedDocument for validation
+            doc = UnifiedDocument(**pdf_data)
+            if run_quality_gate(doc.model_dump()):
+                final_kb.append(doc.model_dump())
+    except Exception as e:
+        print(f"Error processing PDF: {e}")
+
+    # 2. Process CSV
+    csv_docs = process_sales_csv(csv_path)
+    for doc_dict in csv_docs:
+        if run_quality_gate(doc_dict):
+            final_kb.append(doc_dict)
+
+    # 3. Process HTML
+    html_docs = parse_html_catalog(html_path)
+    for doc_dict in html_docs:
+        if run_quality_gate(doc_dict):
+            final_kb.append(doc_dict)
+
+    # 4. Process Transcript
+    trans_data = clean_transcript(trans_path)
+    if trans_data and run_quality_gate(trans_data):
+        final_kb.append(trans_data)
+
+    # 5. Process Legacy Code
+    code_data = extract_logic_from_code(code_path)
+    if code_data and run_quality_gate(code_data):
+        final_kb.append(code_data)
+
+    # --- SAVE RESULTS ---
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(final_kb, f, ensure_ascii=False, indent=4, default=str)
 
     end_time = time.time()
-    print(f"Pipeline finished in {end_time - start_time:.2f} seconds.")
-    print(f"Total valid documents stored: {len(final_kb)}")
+    duration = end_time - start_time
+    print("-" * 30)
+    print(f"Pipeline finished in {duration:.2f} seconds.")
+    print(f"Total valid documents stored in KB: {len(final_kb)}")
+    
+    if duration > 30:
+        print("SLA WARNING: Processing took longer than 30 seconds!")
+    else:
+        print("SLA PASSED: Real-time ingestion successful.")
 
 
 if __name__ == "__main__":
